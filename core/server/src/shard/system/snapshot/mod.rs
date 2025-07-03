@@ -59,6 +59,8 @@ impl IggyShard {
         // and impl the monoio async writer, based on this example:
         // https://youtu.be/RYHYiXMJdZI?si=d2roKeHn5lJrw2ri&t=1140
         // and rc-zip-tokio crate.
+
+        /*
         let cursor = Cursor::new(Vec::new());
         let mut zip_writer = ZipFileWriter::new(cursor.compat_write());
 
@@ -116,7 +118,9 @@ impl IggyShard {
                 }
             }
         }
+        */
 
+        /*
         info!(
             "Snapshot commands {:?} finished in {}",
             snapshot_types,
@@ -132,7 +136,8 @@ impl IggyShard {
         let zip_data = cursor.into_inner();
 
         info!("Final zip size: {} bytes", zip_data.len());
-        Ok(Snapshot::new(zip_data))
+        */
+        Ok(Snapshot::new(vec![]))
     }
 }
 
