@@ -193,7 +193,8 @@ impl IggyShard {
         let stop_receiver = self.get_stop_receiver();
         let shard_for_shutdown = self.clone();
 
-        monoio::spawn(async move {
+        /*
+        compio::runtime::spawn(async move {
             let _ = stop_receiver.recv().await;
             info!("Shard {} received shutdown signal", shard_for_shutdown.id);
 
@@ -207,6 +208,7 @@ impl IggyShard {
                 );
             }
         });
+        */
 
         let result = try_join_all(tasks).await;
         result?;
@@ -506,7 +508,7 @@ impl IggyShard {
     async fn handle_event(&self, event: Arc<ShardEvent>) -> Result<(), IggyError> {
         match &*event {
             ShardEvent::CreatedStream { stream_id, name } => {
-                self.create_stream_bypass_auth(*stream_id, name).await
+                self.create_stream_bypass_auth(*stream_id, name)
             }
             ShardEvent::CreatedTopic {
                 stream_id,
