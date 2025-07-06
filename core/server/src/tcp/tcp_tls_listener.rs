@@ -16,8 +16,11 @@
  * under the License.
  */
 
+use compio::net::TcpListener;
+use compio::tls::TlsAcceptor;
+
 use crate::binary::sender::SenderKind;
-use crate::configs::tcp::TcpTlsConfig;
+// use crate::configs::tcp::TcpTlsConfig;
 use crate::shard::IggyShard;
 use crate::shard::transmission::event::ShardEvent;
 use crate::streaming::clients::client_manager::Transport;
@@ -27,9 +30,9 @@ use iggy_common::IggyError;
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls_pemfile::{certs, private_key};
-use socket2::Socket;
+use socket2::{Socket, SockAddr};
 use std::io::BufReader;
-use std::net::SocketAddr;
+// use std::net::SocketAddr;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,11 +40,10 @@ use tracing::{error, info};
 
 pub(crate) async fn start(
     server_name: &'static str,
-    addr: SocketAddr,
+    addr: SockAddr,
     socket: Socket,
     shard: Rc<IggyShard>,
 ) -> Result<(), IggyError> {
-    /*
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let config = &shard.config.tcp.tls;
 
@@ -61,13 +63,12 @@ pub(crate) async fn start(
         .unwrap_or_else(|e| panic!("Unable to create TLS server config: {e}"));
 
     let acceptor = TlsAcceptor::from(Arc::new(server_config));
+    let acceptor = Arc::new(acceptor);
 
-    socket
-        .bind(&addr.into())
-        .unwrap_or_else(|e| panic!("Unable to bind socket to address '{addr}': {e}",));
+    let listener = TcpListener::bind(&addr.into())
+        .await
+        .unwrap_or_else(|e| panic!("Unable to bind socket to address '{addr:?}': {e}"));
 
-    let listener: std::net::TcpListener = socket.into();
-    let listener = monoio::net::TcpListener::from_std(listener).unwrap();
     info!("{server_name} server has started on: {:?}", addr);
 
     loop {
@@ -76,7 +77,7 @@ pub(crate) async fn start(
                 if shard.is_shutting_down() {
                     return;
                 }
-                monoio::time::sleep(Duration::from_millis(100)).await;
+                compio::time::sleep(Duration::from_millis(100)).await;
             }
         };
 
@@ -111,13 +112,16 @@ pub(crate) async fn start(
                         let conn_stop_receiver = shard_clone.task_registry.add_connection(client_id);
 
                         let shard_for_conn = shard_clone.clone();
+
                         shard_clone.task_registry.spawn_tracked(async move {
                             match acceptor.accept(stream).await {
                                 Ok(tls_stream) => {
                                     let mut sender = SenderKind::get_tcp_tls_sender(tls_stream.into());
+
                                     if let Err(error) = handle_connection(&session, &mut sender, &shard_for_conn, conn_stop_receiver).await {
                                         handle_error(error);
                                     }
+
                                     shard_for_conn.task_registry.remove_connection(&client_id);
 
                                     if let Err(error) = sender.shutdown().await {
@@ -142,7 +146,6 @@ pub(crate) async fn start(
             }
         }
     }
-    */
     Ok(())
 }
 
