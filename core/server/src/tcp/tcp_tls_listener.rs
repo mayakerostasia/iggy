@@ -32,7 +32,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls_pemfile::{certs, private_key};
 use socket2::{Socket, SockAddr};
 use std::io::BufReader;
-// use std::net::SocketAddr;
+use std::net::SocketAddr;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,7 +40,7 @@ use tracing::{error, info};
 
 pub(crate) async fn start(
     server_name: &'static str,
-    addr: SockAddr,
+    addr: SocketAddr,
     socket: Socket,
     shard: Rc<IggyShard>,
 ) -> Result<(), IggyError> {
@@ -65,7 +65,7 @@ pub(crate) async fn start(
     let acceptor = TlsAcceptor::from(Arc::new(server_config));
     let acceptor = Arc::new(acceptor);
 
-    let listener = TcpListener::bind(&addr.into())
+    let listener = TcpListener::bind(&addr)
         .await
         .unwrap_or_else(|e| panic!("Unable to bind socket to address '{addr:?}': {e}"));
 
