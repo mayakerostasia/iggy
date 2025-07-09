@@ -20,7 +20,6 @@ use compio::net::TcpListener;
 use compio::tls::TlsAcceptor;
 
 use crate::binary::sender::SenderKind;
-// use crate::configs::tcp::TcpTlsConfig;
 use crate::shard::IggyShard;
 use crate::shard::transmission::event::ShardEvent;
 use crate::streaming::clients::client_manager::Transport;
