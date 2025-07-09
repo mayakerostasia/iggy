@@ -24,9 +24,9 @@ use bytes::BytesMut;
 use compio::buf::IoBufMut;
 use compio::io::AsyncWrite;
 use compio::net::TcpStream;
+use compio::tls::TlsStream;
 use error_set::ErrContext;
 use iggy_common::IggyError;
-use compio::tls::TlsStream;
 use nix::libc;
 
 #[derive(Debug)]
