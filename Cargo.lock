@@ -7085,6 +7085,7 @@ dependencies = [
  "clap",
  "compio",
  "console-subscriber",
+ "core_affinity",
  "crossbeam",
  "ctrlc",
  "dashmap",
