@@ -16,9 +16,10 @@
  * under the License.
  */
 
-use compio::net::TcpListener;
+use compio::net::{TcpListener, TcpOpts};
 use compio::tls::TlsAcceptor;
 
+use crate::configs::tcp::TcpSocketConfig;
 use crate::binary::sender::SenderKind;
 use crate::shard::IggyShard;
 use crate::shard::transmission::event::ShardEvent;
@@ -37,14 +38,47 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info};
 
+async fn create_listener(
+    addr: SocketAddr,
+    config: &TcpSocketConfig,
+) -> Result<TcpListener, std::io::Error> {
+    // Required by the thread-per-core model...
+    // We create bunch of sockets on different threads, that bind to exactly the same address and port.
+    let opts = TcpOpts::new().reuse_port(true).reuse_port(true);
+    let opts = if config.override_defaults {
+        let recv_buffer_size = config
+            .recv_buffer_size
+            .as_bytes_u64()
+            .try_into()
+            .expect("Failed to parse recv_buffer_size for TCP socket");
+
+        let send_buffer_size = config
+            .send_buffer_size
+            .as_bytes_u64()
+            .try_into()
+            .expect("Failed to parse send_buffer_size for TCP socket");
+
+        opts.recv_buffer_size(recv_buffer_size)
+            .send_buffer_size(send_buffer_size)
+            .keepalive(config.keepalive)
+            .linger(config.linger.get_duration())
+            .nodelay(config.nodelay)
+    } else {
+        opts
+    };
+    TcpListener::bind_with_options(addr, opts).await
+}
+
 pub(crate) async fn start(
     server_name: &'static str,
     addr: SocketAddr,
+    // Hmmmm... Does this argument need to be removed?
     socket: Socket,
     shard: Rc<IggyShard>,
 ) -> Result<(), IggyError> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let config = &shard.config.tcp.tls;
+    let sock_config = &shard.config.tcp.socket;
 
     let (certs, key) =
         if config.self_signed && !std::path::Path::new(&config.cert_file).exists() {
@@ -68,8 +102,7 @@ pub(crate) async fn start(
     let acceptor = TlsAcceptor::from(Arc::new(server_config));
     let acceptor = Arc::new(acceptor);
 
-    let listener = TcpListener::bind(&addr)
-        .await
+    let listener = create_listener(addr, sock_config).await
         .unwrap_or_else(|e| panic!("Unable to bind socket to address '{addr:?}': {e}"));
 
     info!("{server_name} server has started on: {:?}", addr);
