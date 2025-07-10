@@ -1,63 +1,127 @@
 use std::net::SocketAddr;
 
-use iggy_common::{CompressionAlgorithm, Identifier, IggyExpiry, MaxTopicSize};
+use iggy_common::{
+    CompressionAlgorithm, Identifier, IggyExpiry, MaxTopicSize, Permissions, UserStatus,
+};
 
 use crate::{
-    shard::{ShardInfo, namespace::IggyNamespace},
-    streaming::clients::client_manager::Transport,
+    shard::namespace::IggyNamespace,
+    streaming::{clients::client_manager::Transport, polling_consumer::PollingConsumer, personal_access_tokens::personal_access_token::PersonalAccessToken},
 };
 
 #[derive(Debug)]
 pub enum ShardEvent {
+    CreatedShardTableRecords {
+        stream_id: u32,
+        topic_id: u32,
+        partition_ids: Vec<u32>,
+    },
+    DeletedShardTableRecords {
+        namespaces: Vec<IggyNamespace>,
+    },
     CreatedStream {
         stream_id: Option<u32>,
         name: String,
     },
-    //DeletedStream(Identifier),
-    //UpdatedStream(Identifier, String),
-    //PurgedStream(Identifier),
-    //CreatedPartitions(Identifier, Identifier, u32),
-    //DeletedPartitions(Identifier, Identifier, u32),
+    DeletedStream {
+        stream_id: Identifier,
+    },
+    UpdatedStream {
+        stream_id: Identifier,
+        name: String,
+    },
+    PurgedStream {
+        stream_id: Identifier,
+    },
+    CreatedPartitions {
+        stream_id: Identifier,
+        topic_id: Identifier,
+        partitions_count: u32,
+    },
+    DeletedPartitions {
+        stream_id: Identifier,
+        topic_id: Identifier,
+        partition_ids: Vec<u32>,
+    },
     CreatedTopic {
         stream_id: Identifier,
-        topic_id: Option<u32>,
+        topic_id: Identifier,
         name: String,
         partitions_count: u32,
         message_expiry: IggyExpiry,
         compression_algorithm: CompressionAlgorithm,
         max_topic_size: MaxTopicSize,
         replication_factor: Option<u8>,
-        shards_assignment: Vec<(IggyNamespace, ShardInfo)>,
     },
-    //CreatedConsumerGroup(Identifier, Identifier, Option<u32>, String),
-    //DeletedConsumerGroup(Identifier, Identifier, Identifier),
-    /*
-    UpdatedTopic(
-        Identifier,
-        Identifier,
-        String,
-        IggyExpiry,
-        CompressionAlgorithm,
-        MaxTopicSize,
-        Option<u8>,
-    ),
-    */
-    //PurgedTopic(Identifier, Identifier),
-    //DeletedTopic(Identifier, Identifier),
-    //CreatedUser(String, String, UserStatus, Option<Permissions>),
-    //DeletedUser(Identifier),
+    CreatedConsumerGroup {
+        stream_id: Identifier,
+        topic_id: Identifier,
+        consumer_group_id: Option<u32>,
+        name: String,
+    },
+    DeletedConsumerGroup {
+        stream_id: Identifier,
+        topic_id: Identifier,
+        consumer_group_id: Identifier,
+    },
+    UpdatedTopic {
+        stream_id: Identifier,
+        topic_id: Identifier,
+        name: String,
+        message_expiry: IggyExpiry,
+        compression_algorithm: CompressionAlgorithm,
+        max_topic_size: MaxTopicSize,
+        replication_factor: Option<u8>,
+    },
+    PurgedTopic {
+        stream_id: Identifier,
+        topic_id: Identifier,
+    },
+    DeletedTopic {
+        stream_id: Identifier,
+        topic_id: Identifier,
+    },
+    CreatedUser {
+        username: String,
+        password: String,
+        status: UserStatus,
+        permissions: Option<Permissions>,
+    },
+    UpdatedPermissions {
+        user_id: Identifier,
+        permissions: Option<Permissions>,
+    },
+    DeletedUser {
+        user_id: Identifier,
+    },
     LoginUser {
         client_id: u32,
         username: String,
         password: String,
     },
-    //LogoutUser,
-    //UpdatedUser(Identifier, Option<String>, Option<UserStatus>),
-    //ChangedPassword(Identifier, String, String),
-    //CreatedPersonalAccessToken(String, IggyExpiry),
-    //DeletedPersonalAccessToken(String),
-    //LoginWithPersonalAccessToken(String),
-    //StoredConsumerOffset(Identifier, Identifier, PollingConsumer, u64),
+    LogoutUser {
+        client_id: u32,
+    },
+    UpdatedUser {
+        user_id: Identifier,
+        username: Option<String>,
+        status: Option<UserStatus>,
+    },
+    ChangedPassword {
+        user_id: Identifier,
+        current_password: String,
+        new_password: String,
+    },
+    CreatedPersonalAccessToken {
+        personal_access_token: PersonalAccessToken,
+    },
+    DeletedPersonalAccessToken {
+        user_id: u32,
+        name: String,
+    },
+    LoginWithPersonalAccessToken {
+        token: String,
+    },
     NewSession {
         address: SocketAddr,
         transport: Transport,

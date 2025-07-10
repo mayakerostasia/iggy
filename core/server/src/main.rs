@@ -16,9 +16,9 @@
  * under the License.
  */
 
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::thread::available_parallelism;
 
 use anyhow::Result;
 use clap::Parser;
@@ -35,20 +35,20 @@ use server::bootstrap::{
 };
 use server::configs::config_provider::{self};
 use server::configs::server::ServerConfig;
+use server::configs::sharding::CpuAllocation;
 use server::io::fs_utils;
 #[cfg(not(feature = "tokio-console"))]
 use server::log::logger::Logging;
 #[cfg(feature = "tokio-console")]
 use server::log::tokio_console::Logging;
-use server::server_error::ServerError;
+use server::server_error::{ConfigError, ServerError};
 use server::shard::IggyShard;
-use server::shard::gate::Gate;
+use server::shard::gate::Barrier;
 use server::state::StateKind;
 use server::state::command::EntryCommand;
 use server::state::file::FileState;
 use server::state::models::CreateUserWithId;
-use server::state::system::SystemState;
-use server::streaming::utils::{MemoryPool, crypto};
+use server::streaming::utils::MemoryPool;
 use server::versioning::SemanticVersion;
 use server::{IGGY_ROOT_PASSWORD_ENV, IGGY_ROOT_USERNAME_ENV, map_toggle_str};
 use tokio::time::Instant;
@@ -85,7 +85,7 @@ fn main() -> Result<(), ServerError> {
     // Load config and create directories.
     // Remove `local_data` directory if run with `--fresh` flag.
     // TODO: Replace this once we use `monoio::main` macro.
-    let rt = create_shard_executor();
+    let rt = create_shard_executor(Default::default());
     let config = rt
         .block_on(async {
             let config = load_config(&config_provider)
@@ -121,41 +121,44 @@ fn main() -> Result<(), ServerError> {
     // From this point on, we can use tracing macros to log messages.
     logging.late_init(config.system.get_system_path(), &config.system.logging)?;
 
-    // TODO: Make this configurable from config as a range
-    // for example this instance of Iggy will use cores from 0..4
-    let core_ids = core_affinity::get_core_ids().unwrap();
-    let available_cpus = available_parallelism().expect("Failed to get num of cores");
-    let shards_count = available_cpus.into();
-    let shards_set = 0..shards_count;
-    let (connections, shutdown_handles) = create_shard_connections(shards_set.clone());
-    let gate = Arc::new(Gate::new());
+    let shards_set = config.system.sharding.cpu_allocation.to_shard_set();
+
+    match &config.system.sharding.cpu_allocation {
+        CpuAllocation::All => {
+            info!(
+                "Using all available CPU cores ({} shards with affinity)",
+                shards_set.len()
+            );
+        }
+        CpuAllocation::Count(count) => {
+            info!("Using {count} shards with affinity to cores 0..{count}");
+        }
+        CpuAllocation::Range(start, end) => {
+            info!(
+                "Using {} shards with affinity to cores {start}..{end}",
+                end - start
+            );
+        }
+    }
+
+    info!("Starting {} shard(s)", shards_set.len());
+    let (connections, shutdown_handles) = create_shard_connections(&shards_set);
+    let barrier = Arc::new(Barrier::new());
     let mut handles = Vec::with_capacity(shards_set.len());
 
     for shard_id in shards_set {
         let id = shard_id as u16;
-        let gate = gate.clone();
+        let barrier = barrier.clone();
         let connections = connections.clone();
         let config = config.clone();
         let state_persister = resolve_persister(config.system.state.enforce_fsync);
 
-        let core_ids = core_ids.clone();
         let handle = std::thread::Builder::new()
             .name(format!("shard-{id}"))
             .spawn(move || {
-                let core_ids = core_ids.clone();
                 MemoryPool::init_pool(config.system.clone());
-                if core_ids.len() > shard_id {
-                    core_affinity::set_for_current(core_ids[shard_id]);
-                }
-
-                // TODO: Fix this once this PR gets resolved.
-                // https://github.com/compio-rs/compio/pull/445 
-                /*
-                compio::utils::bind_to_cpu_set(Some(shard_id))
-                    .unwrap_or_else(|e| panic!("Failed to set CPU affinity for shard-{id}: {e}"));
-                */
-
-                let rt = create_shard_executor();
+                let affinity_set = HashSet::from([shard_id]);
+                let rt = create_shard_executor(affinity_set);
                 rt.block_on(async move {
                     let version = SemanticVersion::current().expect("Invalid version");
                     info!(
@@ -179,12 +182,12 @@ fn main() -> Result<(), ServerError> {
 
                     // We can't use std::sync::Once because it doesn't support async.
                     // Trait bound on the closure is FnOnce.
-                    // Peak into the state to check if the root user exists.
+                    // Peek into the state to check if the root user exists.
                     // If it does not exist, create it.
-                    gate.with_async::<Result<(), IggyError>>(async |gate_state| {
+                    barrier.with_async::<Result<(), IggyError>>(async |barrier_state| {
                         // A thread already initialized state
                         // Thus, we can skip it.
-                        if let Some(_) = gate_state.inner() {
+                        if let Some(_) = barrier_state.inner() {
                             return Ok(());
                         }
 
@@ -238,7 +241,7 @@ fn main() -> Result<(), ServerError> {
                                 })?;
                         }
 
-                        gate_state.set_result(());
+                        barrier_state.set_result(());
                         Ok(())
                     })
                     .await;
