@@ -23,7 +23,7 @@ use crate::streaming::session::Session;
 use crate::streaming::streams::stream::Stream;
 use crate::streaming::topics::topic::Topic;
 use error_set::ErrContext;
-use iggy_common::locking::IggySharedMutFn;
+use iggy_common::locking::IggyRwLockFn;
 use iggy_common::{CompressionAlgorithm, Identifier, IggyError, IggyExpiry, MaxTopicSize};
 use tokio_util::io::StreamReader;
 use tracing::info;
@@ -102,7 +102,7 @@ impl IggyShard {
         Ok(Some(topic))
     }
 
-    pub async fn create_topic_bypass_auth(
+    pub fn create_topic_bypass_auth(
         &self,
         stream_id: &Identifier,
         topic_id: Option<u32>,
@@ -445,8 +445,41 @@ impl IggyShard {
                     session.get_user_id(),
                 )
             })?;
-        topic.purge().await.with_error_context(|error| {
-            format!("{COMPONENT} (error: {error}) - failed to purge topic with ID: {topic_id} in stream with ID: {stream_id}")
-        })
+
+        self.purge_topic_base(topic.stream_id, topic.topic_id).await
+    }
+
+    pub async fn purge_topic_bypass_auth(
+        &self,
+        stream_id: &Identifier,
+        topic_id: &Identifier,
+    ) -> Result<(), IggyError> {
+        let stream = self.get_stream(stream_id).with_error_context(|error| {
+            format!("{COMPONENT} (error: {error}) - failed to get stream with ID: {stream_id}")
+        })?;
+        let topic = stream
+            .get_topic(topic_id)
+            .with_error_context(|error| {
+                format!("{COMPONENT} (error: {error}) - failed to get topic with ID: {topic_id} in stream with ID: {stream_id}")
+            })?;
+
+        self.purge_topic_base(stream.stream_id, topic.topic_id)
+            .await
+    }
+
+    async fn purge_topic_base(&self, stream_id: u32, topic_id: u32) -> Result<(), IggyError> {
+        let stream = self.get_stream(&Identifier::numeric(stream_id)?)?;
+        let topic = stream.get_topic(&Identifier::numeric(topic_id)?)?;
+
+        for partition in topic.get_partitions() {
+            let mut partition = partition.write().await;
+            let partition_id = partition.partition_id;
+            let namespace = IggyNamespace::new(stream_id, topic_id, partition_id);
+            let shard_info = self.find_shard_table_record(&namespace).unwrap();
+            if shard_info.id() == self.id {
+                partition.purge().await?;
+            }
+        }
+        Ok(())
     }
 }

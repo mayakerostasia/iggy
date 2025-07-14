@@ -18,10 +18,13 @@
 
 use super::COMPONENT;
 use crate::shard::IggyShard;
+use crate::shard::namespace::IggyNamespace;
+use crate::streaming::partitions::partition;
 use crate::streaming::session::Session;
 use crate::streaming::streams::stream::Stream;
 use error_set::ErrContext;
 use futures::future::try_join_all;
+use iggy_common::locking::IggyRwLockFn;
 use iggy_common::{IdKind, Identifier, IggyError};
 use std::cell::{Ref, RefCell, RefMut};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -190,13 +193,13 @@ impl IggyShard {
         &self,
         stream_id: Option<u32>,
         name: &str,
-    ) -> Result<(), IggyError> {
+    ) -> Result<u32, IggyError> {
         let stream = self.create_stream_base(stream_id, name)?;
         let id = stream.stream_id;
         self.streams_ids.borrow_mut().insert(name.to_owned(), id);
         self.streams.borrow_mut().insert(id, stream);
         self.metrics.increment_streams(1);
-        Ok(())
+        Ok(id)
     }
 
     pub async fn create_stream(
@@ -338,22 +341,30 @@ impl IggyShard {
     }
 
     pub fn delete_stream_bypass_auth(&self, id: &Identifier) -> Result<Stream, IggyError> {
-        let stream = self.get_stream(id).with_error_context(|error| {
-            format!("{COMPONENT} (error: {error}) - failed to get stream with ID: {id}")
-        })?;
-        let stream_id = stream.stream_id;
-        let stream_name = stream.name.clone();
+        let stream_id;
+        let stream_name;
+        {
+            let stream = self.get_stream(id).with_error_context(|error| {
+                format!("{COMPONENT} (error: {error}) - failed to get stream with ID: {id}")
+            })?;
+            stream_id = stream.stream_id;
+            stream_name = stream.name.clone();
+        }
         let stream = self.delete_stream_base(stream_id, stream_name)?;
         Ok(stream)
     }
 
     pub fn delete_stream(&self, session: &Session, id: &Identifier) -> Result<Stream, IggyError> {
         self.ensure_authenticated(session)?;
-        let stream = self.get_stream(id).with_error_context(|error| {
-            format!("{COMPONENT} (error: {error}) - failed to get stream with ID: {id}")
-        })?;
-        let stream_id = stream.stream_id;
-        let stream_name = stream.name.clone();
+        let stream_id;
+        let stream_name;
+        {
+            let stream = self.get_stream(id).with_error_context(|error| {
+                format!("{COMPONENT} (error: {error}) - failed to get stream with ID: {id}")
+            })?;
+            stream_id = stream.stream_id;
+            stream_name = stream.name.clone();
+        }
         self.permissioner
             .borrow()
             .delete_stream(session.get_user_id(), stream_id)
@@ -361,7 +372,7 @@ impl IggyShard {
                 format!(
                     "{COMPONENT} (error: {error}) - permission denied to delete stream for user {}, stream ID: {}",
                     session.get_user_id(),
-                    stream.stream_id,
+                    stream_id,
                 )
             })?;
         let stream = self.delete_stream_base(stream_id, stream_name)?;
@@ -407,7 +418,33 @@ impl IggyShard {
                     stream.stream_id,
                 )
             })?;
-        stream.purge().await
+        self.purge_stream_base(stream.stream_id).await?;
+        Ok(())
+    }
+
+    pub async fn purge_stream_bypass_auth(&self, stream_id: &Identifier) -> Result<(), IggyError> {
+        let stream = self.get_stream(stream_id).with_error_context(|error| {
+            format!("{COMPONENT} (error: {error}) - failed to get stream with ID: {stream_id}")
+        })?;
+        self.purge_stream_base(stream.stream_id).await?;
+        Ok(())
+    }
+
+    async fn purge_stream_base(&self, stream_id: u32) -> Result<(), IggyError> {
+        let stream = self.get_stream_ref(stream_id);
+        for topic in stream.get_topics() {
+            let topic_id = topic.topic_id;
+            for partition in topic.get_partitions() {
+                let mut partition = partition.write().await;
+                let partition_id = partition.partition_id;
+                let namespace = IggyNamespace::new(stream_id, topic_id, partition_id);
+                let shard_info = self.find_shard_table_record(&namespace).unwrap();
+                if shard_info.id() == self.id {
+                    partition.purge().await?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 

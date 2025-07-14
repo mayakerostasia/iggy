@@ -24,7 +24,7 @@ use crate::clients::producer_dispatcher::ProducerDispatcher;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use iggy_binary_protocol::{Client, MessageClient, StreamClient, TopicClient};
-use iggy_common::locking::{IggyRwLock, IggySharedMutFn};
+use iggy_common::locking::{IggyRwLock, IggyRwLockFn};
 use iggy_common::{
     CompressionAlgorithm, DiagnosticEvent, EncryptorKind, IdKind, Identifier, IggyDuration,
     IggyError, IggyExpiry, IggyMessage, IggyTimestamp, MaxTopicSize, Partitioner, Partitioning,

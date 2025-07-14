@@ -21,7 +21,7 @@ use crate::streaming::session::Session;
 use error_set::ErrContext;
 use iggy_common::Identifier;
 use iggy_common::IggyError;
-use iggy_common::locking::IggySharedMutFn;
+use iggy_common::locking::IggyRwLockFn;
 
 impl IggyShard {
     pub async fn delete_segments(
@@ -103,9 +103,8 @@ impl IggyShard {
 
             (segments_count, messages_count)
         };
-        drop(partition);
-        drop(topic);
         drop(stream);
+        drop(partition);
 
         let mut stream = self
             .get_stream_mut(stream_id)

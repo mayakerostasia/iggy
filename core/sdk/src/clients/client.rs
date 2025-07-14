@@ -17,7 +17,7 @@
  */
 
 use crate::clients::client_builder::IggyClientBuilder;
-use iggy_common::locking::{IggyRwLock, IggySharedMutFn};
+use iggy_common::locking::{IggyRwLock, IggyRwLockFn};
 
 use crate::client_wrappers::client_wrapper::ClientWrapper;
 use crate::http::http_client::HttpClient;
