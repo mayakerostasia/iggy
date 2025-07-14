@@ -40,6 +40,7 @@ async-dropper = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
+compio = { workspace = true }
 dashmap = { workspace = true }
 # Can be removed if the feature above gets removed.
 #fast-async-mutex = { version = "0.6.7", optional = true }

@@ -20,9 +20,10 @@ use crate::tcp::tcp_stream::ConnectionStream;
 use async_trait::async_trait;
 use iggy_common::IggyError;
 use std::net::SocketAddr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio_rustls::TlsStream;
+// use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use compio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use compio::net::TcpStream;
+use compio::tls::TlsStream;
 use tracing::error;
 
 #[derive(Debug)]
@@ -43,13 +44,15 @@ impl TcpTlsConnectionStream {
 #[async_trait]
 impl ConnectionStream for TcpTlsConnectionStream {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, IggyError> {
-        self.stream.read(buf).await.map_err(|error| {
-            error!(
-                "Failed to read data by client: {} from the TCP TLS connection: {error}",
-                self.client_address
-            );
-            IggyError::TcpError
-        })
+        let reads = self.stream.read(buf).await;
+        reads
+        // self.stream.read(buf).await.0.clone().map_err(|error| {
+        //     error!(
+        //         "Failed to read data by client: {} from the TCP TLS connection: {error}",
+        //         self.client_address
+        //     );
+        //     IggyError::TcpError
+        // })
     }
 
     async fn write(&mut self, buf: &[u8]) -> Result<(), IggyError> {

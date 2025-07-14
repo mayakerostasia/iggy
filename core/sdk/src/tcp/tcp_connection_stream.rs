@@ -18,18 +18,20 @@
 
 use crate::tcp::tcp_stream::ConnectionStream;
 use async_trait::async_trait;
+use compio::BufResult;
 use iggy_common::IggyError;
 use std::net::SocketAddr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::net::TcpStream;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+// use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use compio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
+use compio::net::TcpStream;
+use compio::net::{OwnedReadHalf, OwnedWriteHalf};
 use tracing::error;
 
 #[derive(Debug)]
 pub struct TcpConnectionStream {
     client_address: SocketAddr,
-    reader: BufReader<OwnedReadHalf>,
-    writer: BufWriter<OwnedWriteHalf>,
+    reader: BufReader<OwnedReadHalf<TcpStream>>,
+    writer: BufWriter<OwnedWriteHalf<TcpStream>>,
 }
 
 impl TcpConnectionStream {
@@ -46,13 +48,16 @@ impl TcpConnectionStream {
 #[async_trait]
 impl ConnectionStream for TcpConnectionStream {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, IggyError> {
-        self.reader.read_exact(buf).await.map_err(|error| {
-            error!(
-                "Failed to read data by client: {} from the TCP connection: {error}",
-                self.client_address
-            );
-            IggyError::TcpError
-        })
+        match self.reader.read(buf).await {
+            BufResult(Ok(res), buff) => Ok(res),
+            BufResult(Err(error), buff) => {
+                error!(
+                    "Failed to read data by client: {} from the TCP connection: {error}",
+                    self.client_address
+                );
+                Err(IggyError::TcpError)
+            }
+        }
     }
 
     async fn write(&mut self, buf: &[u8]) -> Result<(), IggyError> {

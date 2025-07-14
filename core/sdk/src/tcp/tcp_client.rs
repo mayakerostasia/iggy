@@ -35,10 +35,11 @@ use rustls::pki_types::{CertificateDer, ServerName, pem::PemObject};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::net::TcpStream;
+use compio::net::TcpStream;
+use compio::tls::{TlsStream, TlsConnector};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-use tokio_rustls::{TlsConnector, TlsStream};
+// use tokio_rustls::{TlsConnector, TlsStream};
 use tracing::{error, info, trace, warn};
 
 const REQUEST_INITIAL_BYTES_LENGTH: usize = 4;
@@ -394,7 +395,7 @@ impl TcpClient {
                 error!("Failed to create a server name from the domain. {error}",);
                 IggyError::InvalidTlsDomain
             })?;
-            let stream = connector.connect(domain, stream).await.map_err(|error| {
+            let stream = connector.connect(&domain.to_str(), stream).await.map_err(|error| {
                 error!("Failed to establish a TLS connection to the server: {error}",);
                 IggyError::CannotEstablishConnection
             })?;
